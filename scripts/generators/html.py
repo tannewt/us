@@ -3,6 +3,9 @@ import jinja2
 import pendulum
 import datetime
 import subprocess
+import os
+import json
+import tweepy
 
 from . import images
 
@@ -18,6 +21,11 @@ top_level_debug = env.get_template("debug.html.jinja")
 git_sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True).stdout.decode("utf-8").strip()
 
 future = datetime.datetime.now() + datetime.timedelta(days=365*4)
+
+if "TWITTER_ACCESS_TOKENS" not in os.environ:
+    with open("secrets.json", "r") as f:
+        os.environ["TWITTER_ACCESS_TOKENS"] = f.read()
+twitter_access_tokens = json.loads(os.environ["TWITTER_ACCESS_TOKENS"])
 
 def debug_key(state):
     for key in ["next_reminder"]:
@@ -39,6 +47,8 @@ def build(
     states=None,
     counties=None,
 ):
+    if county:
+        return
     upcoming_dates = [d for d in dates if d["date"].date() >= now.date()]
 
     if states:
@@ -109,6 +119,7 @@ def build(
         now = pendulum.instance(now)
         reminder_date = pendulum.instance(next_reminder["date"])
         diff = reminder_date.diff(now, False)
+        next_reminder["remaining_days"] = abs(diff.in_days())
         if diff.in_days() == 0:
             main_date = "Today"
             secondary_date = reminder_date.format("(MMMM Do)")
@@ -174,7 +185,7 @@ def build(
         if next_reminder:
             if isinstance(next_reminder["state"], list):
                 data["reminder_location"] = ", ".join((states[s]["name"] for s in next_reminder["state"]))
-                data["explanation"] = data["reminder_location"]
+                next_reminder["explanation"] = data["reminder_location"]
             else:
                 data["reminder_location"] = states[next_reminder["state"]]["name"]
         data["states"] = state_list
@@ -183,7 +194,7 @@ def build(
             filenames.append(f"site/index.html")
         debug_template = top_level_debug
 
-    explanation = None
+    explanation = ""
     if next_reminder:
         reminder = next_reminder["name"] + " by"
         if "explanation" in next_reminder:
@@ -198,6 +209,15 @@ def build(
 
     sites = {"twitter": ("twitter_card", "Twitter Card"),
              "instagram": ("instagram", "Instagram")}
+    hashtags = {
+        "twitter": {
+            "absentee": "#votebymail",
+            "registration": "#registertovote"
+        },
+        "instagram": {
+
+        }
+    }
     for site in sites:
         filename, title = sites[site]
         images.render_image(
@@ -209,6 +229,69 @@ def build(
             main_date=main_date,
             secondary_date=sec_date,
             explanation=explanation)
+        if site == "twitter" and next_reminder and state and not county:
+            tweet = False
+            access_token = twitter_access_tokens[state["lower_name"]]
+            secret = os.environ.get("TWITTER_SECRET_" + state["lower_name"].upper(), "")
+            twitter = None
+            if access_token and secret:
+                print(state["lower_name"])
+                auth = tweepy.OAuthHandler(os.environ["TWITTER_CONSUMER_KEY"], os.environ["TWITTER_CONSUMER_SECRET"])
+                auth.set_access_token(access_token, secret)
+                twitter = tweepy.API(auth)
+                tweet = True
+                try:
+                    me = twitter.me()
+                except tweepy.error.TweepError as e:
+                    print()
+                    for error in e.response.json()["errors"]:
+                        if error["code"] != 326:
+                            raise e
+                        else:
+                            print(state["lower_name"], "Twitter account is locked")
+                    tweet = False
+                if tweet:
+                    print(me)
+                    timeline = twitter.user_timeline()
+                    tweet = len(timeline) == 0
+                    for status in timeline:
+                        print(status)
+            mentions = []
+            state_tag = ""
+            if state:
+                state_tag = "#" + state["lower_name"]
+                for key in state:
+                    if "twitter" in key:
+                        handles = state[key]
+                        if isinstance(handles, list):
+                            mentions.extend(("@" + h for h in handles))
+                        else:
+                            mentions.append("@" +  handles)
+            county_tag = ""
+            if county:
+                county_tag = "#" + county["lower_name"]
+            mentions = " ".join(mentions)
+            espace = ""
+            if explanation:
+                espace = " "
+            hashtag = ""
+            theme = next_reminder.get("subtype", ".").split(".", 1)[0]
+            if site in hashtags and theme in hashtags[site]:
+                hashtag = hashtags[site][theme]
+
+            datetag = "#" + next_reminder["date"].strftime("%Y%m%d")
+
+            # print(next_reminder["remaining_days"], next_reminder["subtype"])
+            if tweet and twitter:
+                status_text = f"{reminder} {main_date} {secondary_date}. {explanation}{espace}Learn more, subscribe and share at https://electioncal.us/{path}/ {mentions} {state_tag} {hashtag} #vote {datetag}"
+                print(status_text)
+                print()
+                # m = twitter.media_upload(f"site/{path}/{filename}.png")
+                # print(m.media_id, m)
+                # twitter.update_status(status_text, media_ids=[m.media_id])
+                #twitter.create_media_metadata(m.media_id, f"Hopefully eye-catching graphic that says \"{reminder} {main_date} {secondary_date}. {explanation}\"")
+
+
         if debug_template:
             debug_social = dict(data)
             debug_social["debug_name"] = title

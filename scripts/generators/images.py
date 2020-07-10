@@ -47,7 +47,9 @@ sites = {
         "secondary_y": 545,
         "secondary_size": 52,
         "explanation_-y": 370,
-        "explanation_size": 37
+        "explanation_size": 37,
+        "election_-y": 300,
+        "election_size": 32
     }
 }
 
@@ -55,7 +57,7 @@ def draw_centered(draw, centerx, y, text, **kwargs):
     size = draw.textsize(text, font=kwargs.get("font", None))
     draw.text((centerx - size[0] // 2, y), text, **kwargs)
 
-def render_image(fn, site, state=None, county=None, reminder=None, main_date="", secondary_date="", explanation=""):
+def render_image(fn, site, state=None, county=None, reminder=None, main_date="", secondary_date="", explanation="", election=""):
     site = sites[site]
     template = site["template"]
     height = template.height
@@ -76,6 +78,8 @@ def render_image(fn, site, state=None, county=None, reminder=None, main_date="",
         draw_centered(d, centerx, site["secondary_y"], secondary_date, fill="#ffffff", font=font("light", site["secondary_size"]))
     if explanation:
         draw_centered(d, centerx, height - site["explanation_-y"], explanation, fill="#ffffff", font=font("light", site["explanation_size"]))
+    if election:
+        draw_centered(d, centerx, height - site["election_-y"], election, fill="#ffffff", font=font("light", site["election_size"]))
 
     img.save(fn)
 
@@ -85,4 +89,5 @@ if __name__ == "__main__":
         reminder="Mail voter registration by:",
         main_date="Today",
         secondary_date="(June 28th)",
-        explanation="Voter registration must be received by July 6th.")
+        explanation="Voter registration must be received by July 6th",
+        election="for the November 3rd general election.")

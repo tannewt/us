@@ -6,6 +6,7 @@ import subprocess
 import os
 import json
 import tweepy
+import sys
 
 from . import images
 
@@ -26,6 +27,24 @@ if "TWITTER_ACCESS_TOKENS" not in os.environ:
     with open("secrets.json", "r") as f:
         os.environ["TWITTER_ACCESS_TOKENS"] = f.read()
 twitter_access_tokens = json.loads(os.environ["TWITTER_ACCESS_TOKENS"])
+
+
+overall_twitter_auth = tweepy.OAuthHandler(os.environ["TWITTER_CONSUMER_KEY"], os.environ["TWITTER_CONSUMER_SECRET"])
+overall_twitter_auth.set_access_token(os.environ["TWITTER_US_KEY"], os.environ["TWITTER_US_SECRET"])
+overall_twitter = tweepy.API(overall_twitter_auth)
+
+last_tweet_by_state = {}
+timeline = overall_twitter.user_timeline(tweet_mode="extended")
+tweet = len(timeline) == 0
+for status in timeline:
+    if status.retweeted:
+        continue
+    #print(dir(status))
+    for chunk in status.full_text.split():
+        if chunk[0] == "#":
+            state = chunk.strip("#")
+            if state not in last_tweet_by_state:
+                last_tweet_by_state[state] = status
 
 def debug_key(state):
     for key in ["next_reminder"]:
@@ -239,7 +258,6 @@ def build(
                 auth = tweepy.OAuthHandler(os.environ["TWITTER_CONSUMER_KEY"], os.environ["TWITTER_CONSUMER_SECRET"])
                 auth.set_access_token(access_token, secret)
                 twitter = tweepy.API(auth)
-                tweet = True
                 try:
                     me = twitter.me()
                 except tweepy.error.TweepError as e:
@@ -250,12 +268,16 @@ def build(
                         else:
                             print(state["lower_name"], "Twitter account is locked")
                     tweet = False
-                if tweet:
-                    print(me)
-                    timeline = twitter.user_timeline()
-                    tweet = len(timeline) == 0
-                    for status in timeline:
-                        print(status)
+
+                timeline = twitter.user_timeline(tweet_mode="extended")
+                if len(timeline) > 0:
+                    last_tweet = timeline[0]
+            else:
+                twitter = overall_twitter
+                last_tweet = last_tweet_by_state.get(state["lower_name"], None)
+
+            if last_tweet is not None:
+                print(state["lower_name"], last_tweet.full_text)
             mentions = []
             state_tag = ""
             if state:
@@ -279,13 +301,14 @@ def build(
             if site in hashtags and theme in hashtags[site]:
                 hashtag = hashtags[site][theme]
 
-            datetag = "#" + next_reminder["date"].strftime("%Y%m%d")
+            datetag = "#by" + next_reminder["date"].strftime("%Y%m%d")
 
             # print(next_reminder["remaining_days"], next_reminder["subtype"])
-            if tweet and twitter:
-                status_text = f"{reminder} {main_date} {secondary_date}. {explanation}{espace}Learn more, subscribe and share at https://electioncal.us/{path}/ {mentions} {state_tag} {hashtag} #vote {datetag}"
+            if tweet:
+                status_text = f"{reminder} {main_date} {secondary_date}. {explanation}{espace}Learn more, subscribe and share at https://electioncal.us/{path}/ {state_tag} {hashtag} #vote {datetag}"
                 print(status_text)
                 print()
+                # if twitter:
                 # m = twitter.media_upload(f"site/{path}/{filename}.png")
                 # print(m.media_id, m)
                 # twitter.update_status(status_text, media_ids=[m.media_id])

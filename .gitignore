@@ -3,3 +3,5 @@ site/*
 !site/static
 __pycache__
 env/*
+.env
+secrets

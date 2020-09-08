@@ -7,6 +7,7 @@ import os
 import json
 import tweepy
 import sys
+import time
 
 from . import images
 
@@ -24,7 +25,7 @@ git_sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True).stdo
 future = datetime.datetime.now() + datetime.timedelta(days=365*4)
 
 if "TWITTER_ACCESS_TOKENS" not in os.environ:
-    with open("secrets.json", "r") as f:
+    with open("secrets/secrets.json", "r") as f:
         os.environ["TWITTER_ACCESS_TOKENS"] = f.read()
 twitter_access_tokens = json.loads(os.environ["TWITTER_ACCESS_TOKENS"])
 
@@ -147,7 +148,11 @@ def build(
             secondary_date = reminder_date.format("(MMMM Do)")
         else:
             main_date = reminder_date.format("MMMM Do")
-            secondary_date = reminder_date.format("(dddd)")
+            # Do a friendly diff string for 
+            if diff.in_days() < -7:
+                secondary_date = "(" + reminder_date.diff_for_humans(now, absolute=True, locale="en") + ")"
+            else:
+                secondary_date = reminder_date.format("(dddd)")
         if "composite" in next_reminder:
             next_reminder["state"] = [r["state"] for r in next_reminder["reminders"]]
             next_reminder["state"] = sorted(list(set(next_reminder["state"])))
@@ -253,6 +258,7 @@ def build(
             access_token = twitter_access_tokens[state["lower_name"]]
             secret = os.environ.get("TWITTER_SECRET_" + state["lower_name"].upper(), "")
             twitter = None
+            state_specific = False
             if access_token and secret:
                 print(state["lower_name"])
                 auth = tweepy.OAuthHandler(os.environ["TWITTER_CONSUMER_KEY"], os.environ["TWITTER_CONSUMER_SECRET"])
@@ -260,6 +266,7 @@ def build(
                 twitter = tweepy.API(auth)
                 try:
                     me = twitter.me()
+                    state_specific = True
                 except tweepy.error.TweepError as e:
                     print()
                     for error in e.response.json()["errors"]:
@@ -267,17 +274,29 @@ def build(
                             raise e
                         else:
                             print(state["lower_name"], "Twitter account is locked")
-                    tweet = False
 
                 timeline = twitter.user_timeline(tweet_mode="extended")
                 if len(timeline) > 0:
                     last_tweet = timeline[0]
-            else:
+
+            if not state_specific:
                 twitter = overall_twitter
                 last_tweet = last_tweet_by_state.get(state["lower_name"], None)
 
+            datetag = "#by" + next_reminder["date"].strftime("%Y%m%d")
+
             if last_tweet is not None:
-                print(state["lower_name"], last_tweet.full_text)
+                # Always, tweet if the date tag of this reminder isn't in the last tweet.
+                if datetag not in last_tweet.full_text:
+                    tweet = True
+                elif main_date in ("Today", "Tomorrow") and main_date not in last_tweet.full_text:
+                    tweet = True
+                elif secondary_date in ("(4 weeks)", "(2 weeks)", "(1 week)") and secondary_date not in last_tweet.full_text:
+                    tweet = True
+                else:
+                    print("Not tweeting", state["lower_name"])
+            else:
+                tweet = True
             mentions = []
             state_tag = ""
             if state:
@@ -301,19 +320,24 @@ def build(
             if site in hashtags and theme in hashtags[site]:
                 hashtag = hashtags[site][theme]
 
-            datetag = "#by" + next_reminder["date"].strftime("%Y%m%d")
-
             # print(next_reminder["remaining_days"], next_reminder["subtype"])
             if tweet:
-                status_text = f"{reminder} {main_date} {secondary_date}. {explanation}{espace}Learn more, subscribe and share at https://electioncal.us/{path}/ {state_tag} {hashtag} #vote {datetag}"
-                print(status_text)
-                print()
-                # if twitter:
-                # m = twitter.media_upload(f"site/{path}/{filename}.png")
-                # print(m.media_id, m)
-                # twitter.update_status(status_text, media_ids=[m.media_id])
-                #twitter.create_media_metadata(m.media_id, f"Hopefully eye-catching graphic that says \"{reminder} {main_date} {secondary_date}. {explanation}\"")
+                status_text = f"{reminder} {main_date} {secondary_date}. {explanation}{espace}https://electioncal.us/{path}/ {state_tag} {hashtag} #vote {datetag}"
+                if not state_specific:
+                    status_text = state["name"] + ", " + status_text[0].lower() + status_text[1:]
 
+                if len(status_text) - len(f"{path}/") > 240:
+                    raise RuntimeError()
+
+                # print("tweet:", status_text)
+                # print()
+                if twitter:
+                    m = twitter.media_upload(f"site/{path}/{filename}.png")
+                # print(m.media_id, m)
+                    twitter.update_status(status_text, media_ids=[m.media_id])
+                    twitter.create_media_metadata(m.media_id, f"Hopefully eye-catching graphic that says \"{reminder} {main_date} {secondary_date}. {explanation}\"")
+                    print("tweeted", status_text)
+                    time.sleep(5)
 
         if debug_template:
             debug_social = dict(data)

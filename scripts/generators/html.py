@@ -35,8 +35,9 @@ overall_twitter_auth.set_access_token(os.environ["TWITTER_US_KEY"], os.environ["
 overall_twitter = tweepy.API(overall_twitter_auth)
 
 last_tweet_by_state = {}
-timeline = overall_twitter.user_timeline(tweet_mode="extended")
+timeline = overall_twitter.user_timeline(tweet_mode="extended", count=200)
 tweet = len(timeline) == 0
+print("Loaded", len(timeline), "past tweets")
 for status in timeline:
     if status.retweeted:
         continue
@@ -288,14 +289,19 @@ def build(
             if last_tweet is not None:
                 # Always, tweet if the date tag of this reminder isn't in the last tweet.
                 if datetag not in last_tweet.full_text:
+                    print("New date tag")
                     tweet = True
                 elif main_date in ("Today", "Tomorrow") and main_date not in last_tweet.full_text:
+                    print("Today or tomorrow")
                     tweet = True
                 elif secondary_date in ("(4 weeks)", "(2 weeks)", "(1 week)") and secondary_date not in last_tweet.full_text:
+                    print("New secondary_date")
                     tweet = True
                 else:
-                    print("Not tweeting", state["lower_name"])
+                    # print("Not tweeting", state["lower_name"])
+                    pass
             else:
+                print("No past tweet")
                 tweet = True
             mentions = []
             state_tag = ""
@@ -337,7 +343,7 @@ def build(
                     twitter.update_status(status_text, media_ids=[m.media_id])
                     twitter.create_media_metadata(m.media_id, f"Hopefully eye-catching graphic that says \"{reminder} {main_date} {secondary_date}. {explanation}\"")
                     print("tweeted", status_text)
-                    time.sleep(5)
+                    # time.sleep(5)
 
         if debug_template:
             debug_social = dict(data)

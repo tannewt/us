@@ -1,7 +1,10 @@
 site/*
+!site/browserconfig.xml
 !site/CNAME
+!site/favicon.ico
 !site/static
 __pycache__
 env/*
 .env
 secrets
+.venv

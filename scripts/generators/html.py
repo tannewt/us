@@ -47,6 +47,7 @@ for status in timeline:
             state = chunk.strip("#")
             if state not in last_tweet_by_state:
                 last_tweet_by_state[state] = status
+            break
 
 def debug_key(state):
     for key in ["next_reminder"]:

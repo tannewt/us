@@ -261,7 +261,6 @@ def build(
             twitter = None
             state_specific = False
             if access_token and secret:
-                print(state["lower_name"])
                 auth = tweepy.OAuthHandler(os.environ["TWITTER_CONSUMER_KEY"], os.environ["TWITTER_CONSUMER_SECRET"])
                 auth.set_access_token(access_token, secret)
                 twitter = tweepy.API(auth)
@@ -269,7 +268,6 @@ def build(
                     me = twitter.me()
                     state_specific = True
                 except tweepy.error.TweepError as e:
-                    print()
                     for error in e.response.json()["errors"]:
                         if error["code"] != 326:
                             raise e
@@ -333,16 +331,20 @@ def build(
                     status_text = state["name"] + ", " + status_text[0].lower() + status_text[1:]
 
                 if len(status_text) - len(f"{path}/") > 240:
-                    raise RuntimeError()
+                    print("tweet too long", status_text)
+                    twitter = None
 
                 # print("tweet:", status_text)
                 # print()
                 if twitter:
                     m = twitter.media_upload(f"site/{path}/{filename}.png")
                 # print(m.media_id, m)
-                    twitter.update_status(status_text, media_ids=[m.media_id])
+                    new_status = twitter.update_status(status_text, media_ids=[m.media_id])
                     twitter.create_media_metadata(m.media_id, f"Hopefully eye-catching graphic that says \"{reminder} {main_date} {secondary_date}. {explanation}\"")
                     print("tweeted", status_text)
+                    if twitter != overall_twitter:
+                        overall_twitter.retweet(new_status.id)
+                        print("retweeted by main account")
                     # time.sleep(5)
 
         if debug_template:
